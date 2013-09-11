@@ -1,4 +1,4 @@
-(defproject org.signaut/ring-jetty8-adapter "1.2.0"
+(defproject org.signaut/ring-jetty9-adapter "1.2.0"
             :description "Ring Jetty adapter."
             :url "https://github.com/ring-clojure/ring"
             :dependencies [[ring/ring-core "1.2.0"]
