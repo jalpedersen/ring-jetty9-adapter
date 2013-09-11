@@ -1,9 +1,8 @@
 (ns ring.adapter.test.jetty
   (:use clojure.test
-        ring.adapter.jetty8)
+        ring.adapter.jetty9)
   (:require [clj-http.client :as http])
-  (:import (org.eclipse.jetty.util.thread QueuedThreadPool)
-           (org.eclipse.jetty.server Server Request)
+  (:import (org.eclipse.jetty.server Server Request)
            (org.eclipse.jetty.server.handler AbstractHandler)))
 
 (defn- hello-world [request]
@@ -38,10 +37,8 @@
   (testing "configurator set to run last"
     (let [max-threads 20 
           new-handler  (proxy [AbstractHandler] [] (handle [_ ^Request base-request request response]))
-          threadPool (QueuedThreadPool. ({} :max-threads max-threads))
-          configurator (fn [server] (.setThreadPool server threadPool) (.setHandler server new-handler))
+          configurator (fn [server] (.setHandler server new-handler))
           server (run-jetty hello-world {:join? false :port 4347 :configurator configurator})]
-      (is (= (.getMaxThreads (.getThreadPool server)) max-threads))
       (is (identical? new-handler (.getHandler server)))
       (is (= 1 (count (.getHandlers server))))
       (.stop server))))

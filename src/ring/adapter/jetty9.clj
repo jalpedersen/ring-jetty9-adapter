@@ -1,9 +1,10 @@
-(ns ring.adapter.jetty8
+(ns ring.adapter.jetty9
   "Adapter for the Jetty webserver."
-  (:import (org.eclipse.jetty.server Server Request)
+  (:import (org.eclipse.jetty.server 
+             Server Request HttpConfiguration ServerConnector
+             HttpConnectionFactory SecureRequestCustomizer
+             SslConnectionFactory ConnectionFactory)
            (org.eclipse.jetty.server.handler AbstractHandler)
-           (org.eclipse.jetty.server.nio SelectChannelConnector)
-           (org.eclipse.jetty.server.ssl SslSelectChannelConnector)
            (org.eclipse.jetty.util.thread QueuedThreadPool)
            (org.eclipse.jetty.util.ssl SslContextFactory)
            (javax.servlet.http HttpServletRequest HttpServletResponse))
@@ -38,24 +39,39 @@
       nil)
     context))
 
-(defn- ssl-connector
-  "Creates a SslSelectChannelConnector instance."
-  [options]
-  (doto (SslSelectChannelConnector. (ssl-context-factory options))
-    (.setPort (options :ssl-port 443))
-    (.setHost (options :host))))
+(defn- http-connector [server options secure?]
+  (let [config (doto (HttpConfiguration.)
+                 (.setSendDateHeader true))]
+    (when secure?
+      (doto config
+        (.setSecurePort (options :ssl-port 443))
+        (.setSecureScheme "https")))
+    (doto (ServerConnector. server (into-array [(HttpConnectionFactory. config)]))
+      (.setPort (options :port 80))
+      (.setName "http"))))
+
+(defn ssl-connector [server options]
+  (let [config (doto (HttpConfiguration.)
+                 (.setSendDateHeader true)
+                 (.setSecurePort (options :ssl-port 443))
+                 (.setSecureScheme "https")
+                 (.addCustomizer (SecureRequestCustomizer.)))]
+    (doto (ServerConnector. server
+                            (into-array ConnectionFactory [(SslConnectionFactory. (ssl-context-factory options) "http/1.1")
+                                                           (HttpConnectionFactory. config)]))
+      (.setPort (options :ssl-port 443))
+      (.setName "https"))))
+
 
 (defn- create-server
   "Construct a Jetty Server instance."
   [options]
-  (let [connector (doto (SelectChannelConnector.)
-                    (.setPort (options :port 80))
-                    (.setHost (options :host)))
-        server    (doto (Server.)
-                    (.addConnector connector)
-                    (.setSendDateHeader true))]
-    (when (or (options :ssl?) (options :ssl-port))
-      (.addConnector server (ssl-connector options)))
+  (let [server (doto (Server. (QueuedThreadPool. (options :max-threads 50))))
+        secure? (or (options :ssl?) (options :ssl-port))
+        http-conn (http-connector server options secure?)]
+    (.addConnector server http-conn)
+    (when secure?
+      (.addConnector server (ssl-connector server options)))
     server))
 
 (defn ^Server run-jetty
@@ -78,8 +94,7 @@
   [handler options]
   (let [^Server s (create-server (dissoc options :configurator))]
     (doto s
-      (.setHandler (proxy-handler handler))
-      (.setThreadPool (QueuedThreadPool. (options :max-threads 50))))
+      (.setHandler (proxy-handler handler)))
     (when-let [configurator (:configurator options)]
       (configurator s))
     (.start s)
